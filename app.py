@@ -109,7 +109,7 @@ def register_post():
         flash('Email address already exists')
         return redirect(url_for('register'))
 
-    new_user = User(username=username, password=generate_password_hash(password, method='sha256'), websocket_id=uuid4().hex)
+    new_user = User(username=username, password=generate_password_hash(password), websocket_id=uuid4().hex)
 
     db.session.add(new_user)
     db.session.commit()
@@ -214,7 +214,12 @@ def messages():
 		if not unread_ids:
 			sort_order = None
 		else:
-			sort_order = case(value=Message.thread_id, whens=unread_ids).asc()
+			# Create a list of when-then conditions for the case statement
+			when_conditions = []
+			for thread_id, order in unread_ids.items():
+				when_conditions.append((Message.thread_id == thread_id, order))
+			# Create the case statement with proper when-then pairs
+			sort_order = case(*when_conditions, else_=0).asc()
 		##########
 
 
@@ -242,13 +247,14 @@ def messages():
 		##########
 
 
-		message_threads = message_threads.paginate(page, 5, False)
+		message_threads = message_threads.paginate(page=page, per_page=5, error_out=False)
 
 		#This returns rendered threads for insert when the "Load additional threads" button is clicked on /Messages/
 		if page > 1:
 			paged_threads = render_template('fetch_new_thread.html', messages=message_threads.items, unread_threads_list=unread_threads_list)
 
-			if not unread_messages.filter(Message.url.in_(message_thread_list)).order_by(sort_order).paginate(page+1, 5, False).items:
+			next_page = unread_messages.filter(Message.url.in_(message_thread_list)).order_by(sort_order).paginate(page=page+1, per_page=5, error_out=False)
+			if not next_page.items:
 				fetch_button = 'false'
 			else:
 				fetch_button = 'true'
